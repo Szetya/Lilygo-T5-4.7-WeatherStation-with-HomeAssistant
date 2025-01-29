@@ -21,6 +21,13 @@ The project is configured as PlatformIO Project (Visual Studio Code AddIn) - to 
 - How to turn off the blue LED light?
     - To turn off the blue LED, you must call `epd_poweroff_all()`, which will turn off the entire power supply controlled by PWM_EN. Note that it cannot be turned off when powered by USB. It can only be turned off when powered by battery. For details, refer to `<examples/demo>`
 
+## New Features (Added in this Fork)
+- Weather Map Display – A graphical map-based weather display is now available. Press GPIO39 to switch to map mode.
+- Customizable City List – Cities can be added in the user_settings.h file, and the list can be navigated using GPIO35.
+- Hungarian Language Support – Added Hungarian language support for UI elements.
+- Map Coordinate Customization – The map's display coordinates can be adjusted in map.h
+![](./assets/WeatherMap.jpg)
+
 # License
 
 [GNU GENERAL PUBLIC LICENSE](./LICENSE)
