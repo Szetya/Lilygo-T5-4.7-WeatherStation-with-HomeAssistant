@@ -1012,6 +1012,8 @@ void DrawMapImage() {
     .x = (SCREEN_WIDTH - mapTile_width) / 2, .y = (SCREEN_HEIGHT - mapTile_height) / 2, .width  = mapTile_width, .height =  mapTile_height
   };
   epd_draw_grayscale_image(area, (uint8_t *) mapTile_data);
+  setFont(OpenSans10B);
+  drawString(5, 5, Date_str + "  @   " + Time_str, LEFT);
 
   for (int i = 0; i < WxMapData.size(); i++) {
     int x = WxMapData[i].x;
