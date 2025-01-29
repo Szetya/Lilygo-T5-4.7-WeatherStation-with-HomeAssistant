@@ -2,6 +2,8 @@
 #include <esp_task_wdt.h>       // In-built
 #include "freertos/FreeRTOS.h"  // In-built
 #include "freertos/task.h"      // In-built
+#include "esp_sleep.h"
+#include "driver/rtc_io.h"
 #include "epd_driver.h"         // https://github.com/Xinyuan-LilyGO/LilyGo-EPD47
 #include "esp_adc_cal.h"        // In-built
 #include <ArduinoJson.h>        // https://github.com/bblanchon/ArduinoJson
@@ -11,11 +13,15 @@
 #include <time.h>               // In-built
 #include "user_settings.h"
 #include "forecast_record.h"
+#include "map.h"
 
 #define SCREEN_WIDTH   EPD_WIDTH
 #define SCREEN_HEIGHT  EPD_HEIGHT
 
 //String version = "2.7.1 / 4.7in"; 
+RTC_DATA_ATTR uint8_t cityListPosID = 0;   // location position number store
+RTC_DATA_ATTR uint8_t pageDisp = 0; // 0 normal, 1 map, 2 other
+static uint8_t maxPages = 2;        // Max page number
 
 enum alignment {LEFT, RIGHT, CENTER};
 #define White         0xFF
@@ -37,10 +43,12 @@ String  Time_str = "--:--:--";
 String  Date_str = "-- --- ----";
 int     wifi_signal, CurrentHour = 0, CurrentMin = 0, CurrentSec = 0, EventCnt = 0, vref = 1100;
 //################ PROGRAM VARIABLES and OBJECTS ##########################################
-#define max_readings 24 // Limited to 3-days here, but could go to 5-days = 40 as the data is issued  
+#define max_readings 40 // Limited to 3-days here, but could go to 5-days = 40 as the data is issued  
 
 Forecast_record_type  WxConditions[1];
 Forecast_record_type  WxForecast[max_readings];
+//MapDataRecord         WxMapData[7];
+std::vector<MapDataRecord> WxMapData;
 
 float pressure_readings[max_readings]    = {0};
 float temperature_readings[max_readings] = {0};
@@ -49,7 +57,7 @@ float rain_readings[max_readings]        = {0};
 float snow_readings[max_readings]        = {0};
 
 long SleepDuration   = 20; // Sleep time in minutes, aligned to the nearest minute boundary, so if 30 will always update at 00 or 30 past the hour
-int  WakeupHour      = 6;  // Wakeup after 06:00 to save battery power
+int  WakeupHour      = 2;  // Wakeup after 06:00 to save battery power
 int  SleepHour       = 23; // Sleep  after 23:00 to save battery power
 long StartTime       = 0;
 long SleepTimer      = 0;
@@ -68,9 +76,25 @@ long Delta           = 30; // ESP32 rtc speed compensation, prevents display at 
 GFXfont  currentFont;
 uint8_t *framebuffer;
 
+extern std::vector<location> cityList;
+
+int calculateX(float lon) {
+    return int((lon - mapTileLonMin) / (mapTileLonMax - mapTileLonMin) * SCREEN_WIDTH);
+}
+
+int calculateY(float lat) {
+    // Fordított irány a szélességi fok növekedése miatt (felülről lefelé haladunk)
+    return int((mapTileLatMax - lat) / (mapTileLatMax - mapTileLatMin) * SCREEN_HEIGHT);
+}
+
 void BeginSleep() {
   epd_poweroff_all();
   UpdateLocalTime();
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  //GPIO's: RST, GPIO0, GPIO35, GPIO34, GPIO39
+  //esp_sleep_enable_ext1_wakeup(((1ULL << 34) | (1ULL << 35) | (1ULL << 39)), ESP_EXT1_WAKEUP_ALL_LOW);
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, LOW); // wake-up PIN 35 and alternate location (city)
+  esp_sleep_enable_ext1_wakeup((1ULL << 39), ESP_EXT1_WAKEUP_ALL_LOW);
   SleepTimer = (SleepDuration * 60 - ((CurrentMin % SleepDuration) * 60 + CurrentSec)) + Delta; //Some ESP32 have a RTC that is too fast to maintain accurate time, so add an offset
   esp_sleep_enable_timer_wakeup(SleepTimer * 1000000LL); // in Secs, 1000000LL converts to Secs as unit = 1uSec
   Serial.println("Awake for : " + String((millis() - StartTime) / 1000.0, 3) + "-secs");
@@ -89,14 +113,14 @@ boolean SetupTime() {
 
 uint8_t StartWiFi() 
 {
-  Serial.println("\r\nWiFi Connecting to: " + String(ssid));
+  Serial.println("\r\nWiFi Connecting to: " + String(ssid)); 
   IPAddress dns(8, 8, 8, 8); // Use Google DNS
   WiFi.disconnect();
   WiFi.mode(WIFI_STA); // switch off AP
   WiFi.begin(ssid, password);
   if (WiFi.waitForConnectResult() != WL_CONNECTED) 
   {
-    Serial.printf("WiFi connection failed, retrying...!\n");
+    Serial.printf("WiFi connection failed, retrying...!\n"); 
     WiFi.disconnect(true); // delete SID/PWD
     delay(500);
     WiFi.begin(ssid, password);
@@ -137,6 +161,18 @@ void loop() {
 
 void setup() {
   InitialiseSystem();
+  esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+  esp_sleep_wakeup_cause_t wakeup_reason;
+  wakeup_reason = esp_sleep_get_wakeup_cause();
+  switch (wakeup_reason) {
+    case ESP_SLEEP_WAKEUP_EXT0:     Serial.println("Wakeup caused by external signal using RTC_IO"); cityListPosID = (cityListPosID + 1) % cityList.size(); break;
+    case ESP_SLEEP_WAKEUP_EXT1:     Serial.println("Wakeup caused by external signal using RTC_CNTL"); pageDisp++; if(pageDisp == maxPages) {pageDisp = 0;}  break; //pageDisp++
+    case ESP_SLEEP_WAKEUP_TIMER:    Serial.println("Wakeup caused by timer"); break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD: Serial.println("Wakeup caused by touchpad"); break;
+    case ESP_SLEEP_WAKEUP_ULP:      Serial.println("Wakeup caused by ULP program"); break;
+    default:                        Serial.printf("Wakeup was not caused by deep sleep: %d\n", wakeup_reason); break;
+  }
+
   if (StartWiFi() == WL_CONNECTED && SetupTime() == true) {
     bool WakeUp = false;
     if (WakeupHour > SleepHour)
@@ -144,28 +180,54 @@ void setup() {
     else
       WakeUp = (CurrentHour >= WakeupHour && CurrentHour <= SleepHour);
     if (WakeUp) {
-      byte Attempts = 1;
-      bool RxWeather  = false;
-      bool RxForecast = false;
-      WiFiClient client;   // wifi client object
-      while ((RxWeather == false || RxForecast == false) && Attempts <= 2) { // Try up-to 2 time for Weather and Forecast data
-        if (RxWeather  == false) RxWeather  = obtainWeatherData(client, "weather");
-        if (RxForecast == false) RxForecast = obtainWeatherData(client, "forecast");
-        Attempts++;
+      if (pageDisp == 0) {  // Normal page
+        byte Attempts = 1;
+        bool RxWeather  = false;
+        bool RxForecast = false;
+        WiFiClient client;   // wifi client object
+        while ((RxWeather == false || RxForecast == false) && Attempts <= 2) { // Try up-to 2 time for Weather and Forecast data
+          if (RxWeather  == false) RxWeather  = obtainWeatherData(client, "weather");
+          if (RxForecast == false) RxForecast = obtainWeatherData(client, "forecast");
+          Attempts++;
+        }
+        Serial.println("Received all weather data...");
+        if (RxWeather && RxForecast) { // Only if received both Weather or Forecast proceed
+          StopWiFi();         // Reduces power consumption
+          epd_poweron();      // Switch on EPD display
+          epd_clear();        // Clear the screen
+          if (pageDisp == 0)
+            DisplayWeather(); // Display the weather data
+          epd_update();       // Update the display to show the information
+          epd_poweroff_all(); // Switch off all power to EPD
+        }
       }
-      Serial.println("Received all weather data...");
-      if (RxWeather && RxForecast) { // Only if received both Weather or Forecast proceed
-        StopWiFi();         // Reduces power consumption
-        epd_poweron();      // Switch on EPD display
-        epd_clear();        // Clear the screen
-        DisplayWeather();   // Display the weather data
-        epd_update();       // Update the display to show the information
-        epd_poweroff_all(); // Switch off all power to EPD
+      if (pageDisp == 1) {  // Map page
+        byte Attempts = 1;
+        bool RxMapdata  = false;
+        WiFiClient client;   // wifi client object
+        while ((RxMapdata == false) && Attempts <= 2) { // Try up-to 2 time for Weather and Forecast data
+          if (RxMapdata == false) RxMapdata = obtainWeatherData(client, "group");
+          Attempts++;
+        }
+        Serial.println("Received all weather data...");
+        if (RxMapdata) {
+          StopWiFi();         // Reduces power consumption
+          epd_poweron();      // Switch on EPD display
+          epd_clear();        // Clear the screen
+          if (pageDisp == 1) {
+            DrawMapImage();   // Display map weather
+            DisplayStatusSection(600, 20, wifi_signal);
+          }
+          epd_update();       // Update the display to show the information
+          epd_poweroff_all(); // Switch off all power to EPD
+        }
       }
     }
   }
   else {
     epd_clear();        // Clear the screen
+    setFont(OpenSans8B);
+    drawString(10, 10, "Wifi Connect Error", LEFT);
     DisplayStatusSection(600, 20, wifi_signal);    // Wi-Fi signal strength and Battery voltage
     epd_update();       // Update the display to show the information
     epd_poweroff_all(); // Switch off all power to EPD
@@ -180,7 +242,7 @@ void Convert_Readings_to_Imperial() { // Only the first 3-hours are used
 }
 
 bool DecodeWeather(WiFiClient& json, String Type) {
-  Serial.print(F("\nDeserializing json... "));
+  Serial.print(F("\nDeserializing json... \r\n"));
   DynamicJsonDocument doc(64 * 1024);                      // allocate the JsonDocument
   DeserializationError error = deserializeJson(doc, json); // Deserialize the JSON document
   if (error) {                                             // Test if parsing succeeds.
@@ -206,6 +268,12 @@ bool DecodeWeather(WiFiClient& json, String Type) {
     WxConditions[0].Windspeed   = root["wind"]["speed"].as<float>();               Serial.println("WSpd: " + String(WxConditions[0].Windspeed));
     WxConditions[0].Winddir     = root["wind"]["deg"].as<float>();                 Serial.println("WDir: " + String(WxConditions[0].Winddir));
     WxConditions[0].Forecast0   = root["weather"][0]["description"].as<char*>();      Serial.println("Fore: " + String(WxConditions[0].Forecast0));
+    /*
+    String forecast = root["weather"][0]["description"].as<String>(); // Read description as String
+    forecast.replace("ő", "ő"); // Replace special characters
+    WxConditions[0].Forecast0 = forecast; // Assign modified string
+    Serial.println("Fore: " + WxConditions[0].Forecast0);
+    */
     WxConditions[0].Icon        = root["weather"][0]["icon"].as<char*>();             Serial.println("Icon: " + String(WxConditions[0].Icon));
   }
   if (Type == "forecast") {
@@ -238,8 +306,23 @@ bool DecodeWeather(WiFiClient& json, String Type) {
 
     if (Units == "I") Convert_Readings_to_Imperial();
   }
+  if (Type == "group") {
+    Serial.print(F("\nReceiving group period - "));
+    JsonArray list                    = root["list"];
+    WxMapData.clear();
+    WxMapData.resize(cityList.size());
+    for (byte r = 0; r < cityList.size(); r++) {
+      Serial.println("\nGroup Period-" + String(r) + "--------------");
+      WxMapData[r].High              = list[r]["main"]["temp_max"].as<float>();             Serial.println("THig: " + String(WxMapData[r].High));
+      WxMapData[r].Low               = list[r]["main"]["temp_min"].as<float>();             Serial.println("TLow: " + String(WxMapData[r].Low));
+      WxMapData[r].Icon              = list[r]["weather"][0]["icon"].as<char*>();           Serial.println("Icon: " + String(WxMapData[r].Icon));
+      WxMapData[r].city              = list[r]["name"].as<char*>();                         Serial.println("city: " + String(WxMapData[r].city));
+      WxMapData[r].x                 = calculateX(list[r]["coord"]["lon"].as<float>());     Serial.println("X: " + String(WxMapData[r].x));
+      WxMapData[r].y                 = calculateY(list[r]["coord"]["lat"].as<float>());     Serial.println("Y: " + String(WxMapData[r].y));
+    }
+  }
   return true;
-}
+} 
 
 String ConvertUnixTime(int unix_time) {
   // Returns either '21:12  ' or ' 09:12pm' depending on Units mode
@@ -260,14 +343,22 @@ bool obtainWeatherData(WiFiClient & client, const String & RequestType) {
   const String Version = "2.5";
   client.stop(); // close connection before sending a new request
   HTTPClient http;
+  String uri;
   // Since June 2024, OWM API need v3.0 for the current, and still provide forecast as
   // awaited on version v2.5
   //api.openweathermap.org/data/2.5/RequestType?lat={lat}&lon={lon}&appid={API key}
-  String uri = "/data/"+Version+"/"+RequestType+"?lat=" + Latitude + "&lon=" + Longitude + "&appid=" + apikey + "&mode=json&units=" + units + "&lang=" + Language;
+  if (RequestType == "weather" || RequestType == "forecast")
+    uri = "/data/" + Version + "/" + RequestType + "?lat=" + String(cityList[cityListPosID].Latitude, 6) + "&lon=" + String(cityList[cityListPosID].Longitude, 6) + "&appid=" + apikey + "&mode=json&units=" + units + "&lang=" + Language;
+  if (RequestType == "group") {
+    String cids = "";
+    for (byte c = 0; c < cityList.size(); c++) { cids += String(cityList[c].cityID) + ","; }
+    Serial.println("CIDS:" + cids);
+    uri = "/data/" + Version + "/" + RequestType + "?id=" + cids + "&appid=" + apikey + "&mode=json&units=" + units + "&lang=" + Language;
+  }
   Serial.print("Connecting: ");
   Serial.print(server + uri);
   Serial.println();
-  if (RequestType == "onecall") uri += "&exclude=minutely,hourly,alerts,daily";
+  //if (RequestType == "onecall") uri += "&exclude=minutely,hourly,alerts,daily";
   http.begin(client, server, 80, uri); 
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -335,9 +426,9 @@ void DisplayWeather() {                          // 4.7" e-paper display is 960x
 
 void DisplayGeneralInfoSection() {
   setFont(OpenSans10B);
-  drawString(5, 2, City, LEFT);
+  drawString(5, 5, cityList[cityListPosID].City, LEFT);
   setFont(OpenSans8B);
-  drawString(500, 2, Date_str + "  @   " + Time_str, LEFT);
+  drawString(SCREEN_WIDTH / 2, 5, Date_str + "  @   " + Time_str, CENTER);
 }
 
 void DisplayWeatherIcon(int x, int y) {
@@ -455,6 +546,13 @@ void DisplayForecastWeather(int x, int y, int index, int fwidth) {
   setFont(OpenSans10B);
   drawString(x + fwidth / 2, y + 30, String(ConvertUnixTime(WxForecast[index].Dt + WxConditions[0].FTimezone).substring(0, 5)), CENTER);
   drawString(x + fwidth / 2, y + 130, String(WxForecast[index].High, 0) + "°/" + String(WxForecast[index].Low, 0) + "°", CENTER);
+}
+
+// Térkép ikon megjelenítés
+void DisplayMapWeather(int x, int y, int index) {
+  DisplayConditionsSection(x, y - 10, WxMapData[index].Icon, SmallIcon);
+  setFont(OpenSans10B);
+  drawString(x, y + 30, String(WxMapData[index].High, 1) + "°/" + String(WxMapData[index].Low, 1) + "°", CENTER);
 }
 
 double NormalizedMoonPhase(int d, int m, int y) {
@@ -633,7 +731,7 @@ void DrawPressureAndTrend(int x, int y, float pressure, String slope) {
 
 void DisplayStatusSection(int x, int y, int rssi) {
   setFont(OpenSans8B);
-  DrawRSSI(x + 305, y + 15, rssi);
+  DrawRSSI(x + 305, y + 15, rssi); // y+15
   DrawBattery(x + 150, y);
 }
 
@@ -688,7 +786,7 @@ boolean UpdateLocalTime() {
 void DrawBattery(int x, int y) {
   uint8_t percentage = 100;
   esp_adc_cal_characteristics_t adc_chars;
-  esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars);
+  esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_12, ADC_WIDTH_BIT_12, 1100, &adc_chars);
   if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
     Serial.printf("eFuse Vref:%u mV\n", adc_chars.vref);
     vref = adc_chars.vref;
@@ -702,7 +800,7 @@ void DrawBattery(int x, int y) {
     drawRect(x + 25, y - 14, 40, 15, Black);
     fillRect(x + 65, y - 10, 4, 7, Black);
     fillRect(x + 27, y - 12, 36 * percentage / 100.0, 11, Black);
-    drawString(x + 85, y - 14, String(percentage) + "%  " + String(voltage, 1) + "v", LEFT);
+    drawString(x + 80, y - 14, String(percentage) + "%  " + String(voltage, 1) + "v", LEFT);
   }
 }
 
@@ -908,6 +1006,21 @@ void Visibility(int x, int y, String Visibility) {
   drawString(x + 20, y, Visibility, LEFT);
 }
 
+// térkép rajzolása
+void DrawMapImage() {
+  Rect_t area = {
+    .x = (SCREEN_WIDTH - mapTile_width) / 2, .y = (SCREEN_HEIGHT - mapTile_height) / 2, .width  = mapTile_width, .height =  mapTile_height
+  };
+  epd_draw_grayscale_image(area, (uint8_t *) mapTile_data);
+
+  for (int i = 0; i < WxMapData.size(); i++) {
+    int x = WxMapData[i].x;
+    int y = WxMapData[i].y;
+    DisplayMapWeather(x, y, i);
+    // fillCircle(x, y, 5, BLACK_ON_WHITE); // Just for position test
+  }
+}
+
 void DrawMoonImage(int x, int y) {
   Rect_t area = {
     .x = x, .y = y, .width  = moon_width, .height =  moon_height
@@ -1004,15 +1117,15 @@ void DrawGraph(int x_pos, int y_pos, int gwidth, int gheight, float Y1Min, float
   }
 }
 
-void drawString(int x, int y, String text, alignment align) {
+void drawString(int32_t x, int32_t y, String text, alignment align) {
   char * data  = const_cast<char*>(text.c_str());
-  int  x1, y1; //the bounds of x,y and w and h of the variable 'text' in pixels.
-  int w, h;
-  int xx = x, yy = y;
+  int32_t  x1, y1; //the bounds of x,y and w and h of the variable 'text' in pixels.
+  int32_t w, h;
+  int32_t xx = x, yy = y;
   get_text_bounds(&currentFont, data, &xx, &yy, &x1, &y1, &w, &h, NULL);
   if (align == RIGHT)  x = x - w;
   if (align == CENTER) x = x - w / 2;
-  int cursor_y = y + h;
+  int32_t cursor_y = y + h;
   write_string(&currentFont, data, &x, &cursor_y, framebuffer);
 }
 

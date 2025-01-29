@@ -1,3 +1,6 @@
+#include <Arduino.h>
+#include <ArduinoJson.h>        // https://github.com/bblanchon/ArduinoJson
+#include <WiFi.h>               // In-built
 
 /// mqtt
 char* host = "192.168.1.20";  // your own mqtt server IP

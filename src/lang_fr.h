@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #define FONT(x) x##_tf
 
 //Temperature - Humidity - Forecast

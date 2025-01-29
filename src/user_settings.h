@@ -1,3 +1,6 @@
+#include <Arduino.h>
+#include <string>
+#include <vector>
 // Change to your WiFi credentials
 const char* ssid     = "SSID";
 const char* password = "Password";
@@ -8,11 +11,27 @@ const char server[] = "api.openweathermap.org";
 //http://api.openweathermap.org/data/2.5/forecast?q=Melksham,UK&APPID=your_OWM_API_key&mode=json&units=metric&cnt=40
 //http://api.openweathermap.org/data/2.5/weather?q=Melksham,UK&APPID=your_OWM_API_key&mode=json&units=metric&cnt=1
 
+
+struct location {
+    String City;
+    float Latitude;
+    float Longitude;
+    int cityID;
+};
+
 //Set your location according to OWM locations
-String City             = "Kößlarn,DE";                    // Your home city See: http://bulk.openweathermap.org/sample/
-String Latitude         = "48.374462";                     // Latitude of your location in decimal degrees
-String Longitude        = "13.116431";                     // Longitude of your location in decimal degrees
-String Language         = "de";                            // NOTE: Only the weather description is translated by OWM
+std::vector<location> cityList = {
+    /*Name, lat, lon, id : cityID from City: https://api.openweathermap.org/data/2.5/weather?q=Kisk%C5%91r%C3%B6s&appid=your_OWM_API_key*/
+    {"Budapest", 47.550432, 19.125167, 3054643},
+    {"Szeged", 46.2530, 20.1482, 715429},
+    {"Debrecen", 47.5316, 21.6273, 721472},
+    {"Kiskõrös", 46.6214, 19.2852, 3049896},
+    {"Gyõr", 47.6875, 17.6504, 3052009},
+    {"Nyíregyháza", 47.9495, 21.7249, 716935},
+    {"Pécs", 46.0727, 18.2323, 3046526}
+};
+
+String Language         = "hu";                            // NOTE: Only the weather description is translated by OWM
                                                            // Examples: German (DE) Arabic (AR) Czech (CZ) English (EN) Greek (EL) Persian(Farsi) (FA) Galician (GL) Hungarian (HU) Japanese (JA)
                                                            // Korean (KR) Latvian (LA) Lithuanian (LT) Macedonian (MK) Slovak (SK) Slovenian (SL) Vietnamese (VI)
 String Hemisphere       = "north";                         // or "south"  
@@ -39,6 +58,7 @@ int  daylightOffset_sec = 3600;                            // In the UK DST is +
 //const char* Timezone = "ACST-9:30ACDT,M10.1.0,M4.1.0/3":   // Australia
 
 // Select language to use or add your own translation
-#include "lang.h"
+//#include "lang.h"
 //#include "lang_fr.h"
 //#include "lang_de.h"
+#include "lang_hu.h"

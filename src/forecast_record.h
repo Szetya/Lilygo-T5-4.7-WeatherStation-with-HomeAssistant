@@ -26,4 +26,15 @@ typedef struct { // For current Day and Day 1, 2, 3, etc
   int    FTimezone;  
 } Forecast_record_type;
 
+typedef struct {
+  /* data */
+  String Icon;
+  float  High;
+  float  Low;
+  int x;
+  int y;
+  String city;
+} MapDataRecord;
+
+
 #endif /* ifndef FORECAST_RECORD_H_ */
