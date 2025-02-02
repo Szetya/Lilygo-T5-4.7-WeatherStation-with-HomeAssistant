@@ -2,11 +2,11 @@
 #include <string>
 #include <vector>
 // Change to your WiFi credentials
-const char* ssid     = "SSID";
-const char* password = "Password";
+const char* ssid     = "Szetya_ASUS";
+const char* password = "FreeWiFi";
 
 // Use your own API key by signing up for a free developer account at https://openweathermap.org/
-String apikey       = "APKIKEY";
+String apikey       = "0befb4cbda8fd23e73fdabf6407eea6f";
 const char server[] = "api.openweathermap.org";
 //http://api.openweathermap.org/data/2.5/forecast?q=Melksham,UK&APPID=your_OWM_API_key&mode=json&units=metric&cnt=40
 //http://api.openweathermap.org/data/2.5/weather?q=Melksham,UK&APPID=your_OWM_API_key&mode=json&units=metric&cnt=1
@@ -27,8 +27,9 @@ std::vector<location> cityList = {
     {"Debrecen", 47.5316, 21.6273, 721472},
     {"Kiskõrös", 46.6214, 19.2852, 3049896},
     {"Gyõr", 47.6875, 17.6504, 3052009},
-    {"Nyíregyháza", 47.9495, 21.7249, 716935},
-    {"Pécs", 46.0727, 18.2323, 3046526}
+    {"Zalaegerszeg", 46.8400, 16.8439, 3042638},
+    {"Pécs", 46.0727, 18.2323, 3046526},
+    {"Miskolc", 48.1000, 20.7833, 717582}
 };
 
 String Language         = "hu";                            // NOTE: Only the weather description is translated by OWM
@@ -63,8 +64,7 @@ int  daylightOffset_sec = 3600;                            // In the UK DST is +
 //#include "lang_de.h"
 #include "lang_hu.h"
 
-
 // Params needed to fetch events from Google Calendar
 char const * const calendarHost = "script.google.com";
-char const * const calendarPath = "/macros/s/Your_Key/exec"; // script path including key
+char const * const calendarPath = "/macros/s/AKfycbyuooKDz-gIqsW8ia76Cvo-e2_6SAcfqX3KHhNq-gHzrcsUXac20kRrQt3XdUPSblm3qw/exec"; // script path including key
 int const calendarPort = 443;

@@ -18,10 +18,17 @@
 #define SCREEN_WIDTH   EPD_WIDTH
 #define SCREEN_HEIGHT  EPD_HEIGHT
 
+enum Page {
+    PAGE_NORMAL = 0, // Egyértelművé teszi, hogy ez 0
+    PAGE_MAP,        // Automatikusan 1 lesz
+    PAGE_CALENDAR,   // Automatikusan 2 lesz
+    MAX_PAGES        // Automatikusan 3 lesz
+};
+
 //String version = "2.7.1 / 4.7in"; 
-RTC_DATA_ATTR uint8_t cityListPosID = 0;   // location position number store
-RTC_DATA_ATTR uint8_t pageDisp = 0; // 0 normal, 1 map, 2 other
-static uint8_t maxPages = 2;        // Max page number
+RTC_DATA_ATTR uint8_t cityListPosID = 0;   // location position number, store
+RTC_DATA_ATTR uint8_t pageNr = PAGE_CALENDAR; // 0 normal, 1 map, 2 calendar,
+static uint8_t maxPages = 3;        // Max page number
 
 enum alignment {LEFT, RIGHT, CENTER};
 #define White         0xFF
@@ -43,12 +50,12 @@ String  Time_str = "--:--:--";
 String  Date_str = "-- --- ----";
 int     wifi_signal, CurrentHour = 0, CurrentMin = 0, CurrentSec = 0, EventCnt = 0, vref = 1100;
 //################ PROGRAM VARIABLES and OBJECTS ##########################################
-#define max_readings 40 // Limited to 3-days here, but could go to 5-days = 40 as the data is issued  
+#define max_readings 40 // Limited to 3-days here, but could go to 5-days = 40 as the data is issued
 
 Forecast_record_type  WxConditions[1];
 Forecast_record_type  WxForecast[max_readings];
-//MapDataRecord         WxMapData[7];
-std::vector<MapDataRecord> WxMapData;
+std::vector<Map_record_type> WxMapData;
+std::vector<EventData> Calendardata;
 
 float pressure_readings[max_readings]    = {0};
 float temperature_readings[max_readings] = {0};
@@ -91,8 +98,6 @@ void BeginSleep() {
   epd_poweroff_all();
   UpdateLocalTime();
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-  //GPIO's: RST, GPIO0, GPIO35, GPIO34, GPIO39
-  //esp_sleep_enable_ext1_wakeup(((1ULL << 34) | (1ULL << 35) | (1ULL << 39)), ESP_EXT1_WAKEUP_ALL_LOW);
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, LOW); // wake-up PIN 35 and alternate location (city)
   esp_sleep_enable_ext1_wakeup((1ULL << 39), ESP_EXT1_WAKEUP_ALL_LOW);
   SleepTimer = (SleepDuration * 60 - ((CurrentMin % SleepDuration) * 60 + CurrentSec)) + Delta; //Some ESP32 have a RTC that is too fast to maintain accurate time, so add an offset
@@ -166,7 +171,7 @@ void setup() {
   wakeup_reason = esp_sleep_get_wakeup_cause();
   switch (wakeup_reason) {
     case ESP_SLEEP_WAKEUP_EXT0:     Serial.println("Wakeup caused by external signal using RTC_IO"); cityListPosID = (cityListPosID + 1) % cityList.size(); break;
-    case ESP_SLEEP_WAKEUP_EXT1:     Serial.println("Wakeup caused by external signal using RTC_CNTL"); pageDisp++; if(pageDisp == maxPages) {pageDisp = 0;}  break; //pageDisp++
+    case ESP_SLEEP_WAKEUP_EXT1:     Serial.println("Wakeup caused by external signal using RTC_CNTL"); pageNr = (pageNr + 1) % MAX_PAGES;  break; //pageNr++
     case ESP_SLEEP_WAKEUP_TIMER:    Serial.println("Wakeup caused by timer"); break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD: Serial.println("Wakeup caused by touchpad"); break;
     case ESP_SLEEP_WAKEUP_ULP:      Serial.println("Wakeup caused by ULP program"); break;
@@ -180,7 +185,7 @@ void setup() {
     else
       WakeUp = (CurrentHour >= WakeupHour && CurrentHour <= SleepHour);
     if (WakeUp) {
-      if (pageDisp == 0) {  // Normal page
+      if (pageNr == PAGE_NORMAL) {  // Normal page
         byte Attempts = 1;
         bool RxWeather  = false;
         bool RxForecast = false;
@@ -195,31 +200,46 @@ void setup() {
           StopWiFi();         // Reduces power consumption
           epd_poweron();      // Switch on EPD display
           epd_clear();        // Clear the screen
-          if (pageDisp == 0)
-            DisplayWeather(); // Display the weather data
+          DisplayWeatherPage(); // Display the weather data
           epd_update();       // Update the display to show the information
-          epd_poweroff_all(); // Switch off all power to EPD
         }
       }
-      if (pageDisp == 1) {  // Map page
+      if (pageNr == PAGE_MAP) {  // Map page
         byte Attempts = 1;
-        bool RxMapdata  = false;
+        bool RxGroup  = false;
         WiFiClient client;   // wifi client object
-        while ((RxMapdata == false) && Attempts <= 2) { // Try up-to 2 time for Weather and Forecast data
-          if (RxMapdata == false) RxMapdata = obtainWeatherData(client, "group");
+        while ((RxGroup == false) && Attempts <= 2) { // Try up-to 2 time for Weather and Forecast data
+          if (RxGroup == false) RxGroup = obtainWeatherData(client, "group");
           Attempts++;
         }
         Serial.println("Received all weather data...");
-        if (RxMapdata) {
+        if (RxGroup) {
           StopWiFi();         // Reduces power consumption
           epd_poweron();      // Switch on EPD display
           epd_clear();        // Clear the screen
-          if (pageDisp == 1) {
-            DrawMapImage();   // Display map weather
-            DisplayStatusSection(600, 20, wifi_signal);
-          }
+          DrawMapPage();   // Display map weather
           epd_update();       // Update the display to show the information
-          epd_poweroff_all(); // Switch off all power to EPD
+        }
+      }
+      if (pageNr == PAGE_CALENDAR) { // Calendar page
+        byte Attempts = 1;
+        bool RxCalendardata  = false;
+        bool RxWeather = false;
+        WiFiClientSecure secureclient;   // wifi client secure object for calendar webapp
+        WiFiClient client;
+        while((RxCalendardata == false) && Attempts <= 3) {
+          secureclient.setInsecure();
+          if (RxCalendardata == false) RxCalendardata = obtainCalendarData(secureclient);
+          if (RxWeather  == false) RxWeather  = obtainWeatherData(client, "weather");
+          Attempts++;
+        }
+        Serial.println("Received all calendar data...");
+        if (RxCalendardata) {
+          StopWiFi();         // Reduces power consumption
+          epd_poweron();      // Switch on EPD display
+          epd_clear();        // Clear the screen
+          DisplayCalendarPage();   // Display calendar
+          epd_update();       // Update the display to show the information
         }
       }
     }
@@ -232,6 +252,7 @@ void setup() {
     epd_update();       // Update the display to show the information
     epd_poweroff_all(); // Switch off all power to EPD
   }
+  epd_poweroff_all(); // Switch off all power to EPD
   BeginSleep();
 }
 
@@ -252,10 +273,10 @@ bool DecodeWeather(WiFiClient& json, String Type) {
   }
   // convert it to a JsonObject
   JsonObject root = doc.as<JsonObject>();
-  Serial.println(" Decoding " + Type + " data");
+  Serial.println("Decoding " + Type + " data");
   if (Type == "weather") {
-    WxConditions[0].High        = -50; // Minimum forecast low
-    WxConditions[0].Low         = 50;  // Maximum Forecast High
+    WxConditions[0].High        = root["main"]["temp_max"].as<float>();            Serial.println("Tempmax: " + String(WxConditions[0].High)); //-50; // Minimum forecast low
+    WxConditions[0].Low         = root["main"]["temp_min"].as<float>();            Serial.println("Tempmin: " + String(WxConditions[0].Low));// 50;  // Maximum Forecast High
     WxConditions[0].FTimezone   = doc["timezone_offset"]; // "0"
     WxConditions[0].Sunrise     = root["sys"]["sunrise"].as<int>();                Serial.println("SRis: " + String(WxConditions[0].Sunrise));
     WxConditions[0].Sunset      = root["sys"]["sunset"].as<int>();                 Serial.println("SSet: " + String(WxConditions[0].Sunset));
@@ -267,13 +288,12 @@ bool DecodeWeather(WiFiClient& json, String Type) {
     WxConditions[0].Visibility  = root["visibility"].as<int>();                    Serial.println("Visi: " + String(WxConditions[0].Visibility));
     WxConditions[0].Windspeed   = root["wind"]["speed"].as<float>();               Serial.println("WSpd: " + String(WxConditions[0].Windspeed));
     WxConditions[0].Winddir     = root["wind"]["deg"].as<float>();                 Serial.println("WDir: " + String(WxConditions[0].Winddir));
-    WxConditions[0].Forecast0   = root["weather"][0]["description"].as<char*>();      Serial.println("Fore: " + String(WxConditions[0].Forecast0));
-    /*
+    //WxConditions[0].Forecast0   = root["weather"][0]["description"].as<char*>();      Serial.println("Fore: " + String(WxConditions[0].Forecast0));
     String forecast = root["weather"][0]["description"].as<String>(); // Read description as String
-    forecast.replace("ő", "ő"); // Replace special characters
+    forecast.replace("ő", "õ"); // Replace special characters
     WxConditions[0].Forecast0 = forecast; // Assign modified string
     Serial.println("Fore: " + WxConditions[0].Forecast0);
-    */
+
     WxConditions[0].Icon        = root["weather"][0]["icon"].as<char*>();             Serial.println("Icon: " + String(WxConditions[0].Icon));
   }
   if (Type == "forecast") {
@@ -316,13 +336,64 @@ bool DecodeWeather(WiFiClient& json, String Type) {
       WxMapData[r].High              = list[r]["main"]["temp_max"].as<float>();             Serial.println("THig: " + String(WxMapData[r].High));
       WxMapData[r].Low               = list[r]["main"]["temp_min"].as<float>();             Serial.println("TLow: " + String(WxMapData[r].Low));
       WxMapData[r].Icon              = list[r]["weather"][0]["icon"].as<char*>();           Serial.println("Icon: " + String(WxMapData[r].Icon));
-      WxMapData[r].city              = list[r]["name"].as<char*>();                         Serial.println("city: " + String(WxMapData[r].city));
+      WxMapData[r].city              = list[r]["name"].as<String>();                         Serial.println("city: " + String(WxMapData[r].city));
       WxMapData[r].x                 = calculateX(list[r]["coord"]["lon"].as<float>());     Serial.println("X: " + String(WxMapData[r].x));
       WxMapData[r].y                 = calculateY(list[r]["coord"]["lat"].as<float>());     Serial.println("Y: " + String(WxMapData[r].y));
     }
   }
   return true;
 } 
+
+bool DecodeCalendar(const String& json) {
+  Serial.print(F("\nDeserializing json... \r\n"));
+  //Serial.println("json:" + json);
+  DynamicJsonDocument doc(64 * 1024);                      // allocate the JsonDocument
+  DeserializationError error = deserializeJson(doc, json); // Deserialize the JSON document
+  if (error) {                                             // Test if parsing succeeds.
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  JsonArray events = doc["events"].as<JsonArray>();
+  size_t eventCount = events.size();
+
+  Serial.println("Decoding Calendar data");
+  Calendardata.clear();
+  Calendardata.reserve(eventCount);
+
+  for (size_t r = 0; r < eventCount; r++) {
+      Serial.println("\nCalendar Period-" + String(r) + "--------------");
+
+      EventData event;  // Ideiglenes objektum
+
+      event.startTime   = events[r]["startTime"].as<String>();
+      event.endTime     = events[r]["endTime"].as<String>();
+      event.title       = events[r]["title"].as<String>();
+      event.description = events[r]["description"].as<String>();
+      event.allDay      = events[r]["allDay"].as<bool>();
+      event.status      = events[r]["status"].as<String>();
+      event.alert       = events[r]["alert"][0].as<String>();
+      event.month       = events[r]["month"].as<uint8_t>();
+      event.day         = events[r]["day"].as<uint8_t>();
+      event.weekday     = events[r]["weekday"].as<uint8_t>();
+
+      Serial.println("Start: " + event.startTime);
+      Serial.println("End: " + event.endTime);
+      Serial.println("Title: " + event.title);
+      Serial.println("descr: " + event.description);
+      Serial.println("allday: " + String(event.allDay));
+      Serial.println("status: " + event.status);
+      Serial.println("alert: " + event.alert);
+      Serial.println("month: " + String(event.month));
+      Serial.println("day: " + String(event.day));
+      Serial.println("weekday: " + String(event.weekday));
+
+      Calendardata.push_back(event);
+  }
+  return true;
+}
+
 
 String ConvertUnixTime(int unix_time) {
   // Returns either '21:12  ' or ' 09:12pm' depending on Units mode
@@ -338,6 +409,7 @@ String ConvertUnixTime(int unix_time) {
   return output;
 }
 
+// Időjárás adatok lekérése (weather, forecast, group)
 bool obtainWeatherData(WiFiClient & client, const String & RequestType) {
   const String units = (Units == "M" ? "metric" : "imperial");
   const String Version = "2.5";
@@ -359,7 +431,7 @@ bool obtainWeatherData(WiFiClient & client, const String & RequestType) {
   Serial.print(server + uri);
   Serial.println();
   //if (RequestType == "onecall") uri += "&exclude=minutely,hourly,alerts,daily";
-  http.begin(client, server, 80, uri); 
+  http.begin(client, server, 80, uri);
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
     if (!DecodeWeather(http.getStream(), RequestType)) return false;
@@ -368,6 +440,39 @@ bool obtainWeatherData(WiFiClient & client, const String & RequestType) {
   else
   {
     Serial.printf("connection failed, http error code %i %s\n", httpCode, http.errorToString(httpCode));
+    client.stop();
+    http.end();
+    return false;
+  }
+  http.end();
+  return true;
+}
+
+bool obtainCalendarData(WiFiClientSecure &client) {
+  client.stop(); // Kapcsolat bontása az új kérés előtt
+  HTTPClient http;
+  
+  String uri = String(calendarPath);  // A teljes API útvonal
+
+  Serial.print("Connecting to: ");
+  Serial.print(calendarHost);
+  Serial.print(uri);
+  Serial.println();
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // Kövesse az átirányításokat! nem biztos, hogy szükséges
+  http.begin(client, calendarHost, calendarPort, uri, true); // true = HTTPS támogatás
+  int httpCode = http.GET();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    Serial.println("Calendar data received!");
+    // JSON beolvasása biztonságosan és kiíratás
+    String payload = http.getString();
+    Serial.println("Received JSON:");
+    Serial.println(payload);
+
+    if (!DecodeCalendar(payload)) return false;
+    client.stop();
+  } else {
+    Serial.printf("Connection failed, HTTP error code: %i %s\n", httpCode, http.errorToString(httpCode).c_str());
     client.stop();
     http.end();
     return false;
@@ -413,7 +518,8 @@ String TitleCase(String text) {
   else return text;
 }
 
-void DisplayWeather() {                          // 4.7" e-paper display is 960x540 resolution
+// Időjárás lap rajzolása
+void DisplayWeatherPage() {                      // 4.7" e-paper display is 960x540 resolution
   DisplayStatusSection(600, 20, wifi_signal);    // Wi-Fi signal strength and Battery voltage
   DisplayGeneralInfoSection();                   // Top line of the display
   DisplayDisplayWindSection(137, 150, WxConditions[0].Winddir, WxConditions[0].Windspeed, 100);
@@ -424,6 +530,159 @@ void DisplayWeather() {                          // 4.7" e-paper display is 960x
   DisplayGraphSection(320, 220);                 // Graphs of pressure, temperature, humidity and rain or snowfall
 }
 
+// Térkép lap rajzolása
+void DrawMapPage() {
+  Rect_t area = {
+    .x = (SCREEN_WIDTH - mapTile_width) / 2, .y = (SCREEN_HEIGHT - mapTile_height) / 2, .width  = mapTile_width, .height =  mapTile_height
+  };
+  epd_draw_grayscale_image(area, (uint8_t *) mapTile_data);
+  setFont(OpenSans10B);
+  drawString(5, 5, Date_str + "  @   " + Time_str, LEFT);
+
+  for (int i = 0; i < WxMapData.size(); i++) {
+    int x = WxMapData[i].x;
+    int y = WxMapData[i].y;
+    DisplayMapWeather(x, y, i);
+    DisplayStatusSection(600, 20, wifi_signal);
+    // fillCircle(x, y, 5, BLACK_ON_WHITE); // Just for position test
+  }
+}
+
+// Naptár lap rajzolása
+void DisplayCalendarPage() {
+int count = min(int(Calendardata.size()), 3);  // Max. 3 eseményt jelenítünk meg
+int startY = 220 + (3 - count) * 105;     // Alsó igazítás
+
+for (int i = 0; i < count; i++) {
+    String noti = monthShort_M[Calendardata[i].month - 1];
+    noti += " " + String(Calendardata[i].day) + ". " + weekday_D[Calendardata[i].weekday - 1];
+
+    if (!Calendardata[i].allDay)
+        noti += " " + Calendardata[i].startTime + " - " + Calendardata[i].endTime;  // ÓÓ:pp - ÓÓ:pp
+
+    bool showMore = (i == 2 && Calendardata.size() > 3);  // Ha van több esemény, a harmadik box jelölje
+
+    DisplayEventBox(10, startY + (i * 105), noti, Calendardata[i].title, Calendardata[i].description, showMore);
+}
+  DisplayMonthView(440, 180, 0);
+  DisplayMainWeatherSection(45, 90);
+  DisplayGeneralInfoSection();
+  DisplayStatusSection(600, 20, wifi_signal);
+}
+
+// Hónap napjait adja vissza szökőév számítással
+int getDaysInMonth(int year, int month) {
+  const int daysPerMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+  if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0))) {
+      return 29;  // Szökőév
+  }
+
+  return daysPerMonth[month - 1];
+}
+
+int getCurrentWeekNumber() {
+  time_t now = time(nullptr);
+  struct tm timeinfo;
+  localtime_r(&now, &timeinfo);
+  char buffer[3];
+  strftime(buffer, sizeof(buffer), "%V", &timeinfo); // ISO 8601 hét szám
+  return atoi(buffer);
+}
+
+void DisplayMonthView(int16_t x, int16_t y, bool firstMonday) {
+  int8_t w = 70;  // Oszlopok közti távolság
+  int8_t h = 50;  // Sorok közti távolság
+  setFont(OpenSans18B);
+
+  // Rendszeridő lekérése
+  time_t now = time(nullptr);
+  struct tm *timeinfo = localtime(&now);
+  
+  int year = timeinfo->tm_year + 1900;            // Év
+  int month = timeinfo->tm_mon + 1;               // Hónap
+  int today = timeinfo->tm_mday;                  // Aktuális nap
+  int firstDay = timeinfo->tm_wday;               // Első nap hétindexe
+  int daysInMonth = getDaysInMonth(year, month);  // Hónap hossza
+  int weekInYear = getCurrentWeekNumber();        // aktuális hét az évben
+
+  // Ha hétfő az első nap, akkor átalakítjuk az indexeket
+  if (firstMonday) {
+    firstDay = (firstDay == 0) ? 6 : firstDay - 1;
+  }
+
+  drawString(x + ((7*w) / 2), y - 50, String(year) + " " +  String(monthLong_M[month - 1]), CENTER);
+
+  // Napok fejlécének kirajzolása
+  for (int i = 0; i < 7; i++) {
+    drawString(x + 60 + (i * w), y, weekdayC_D[i], CENTER);
+  }
+
+  // Hetek sorszámainak kirajzolása
+  for (int i = 0; i < 6; i++) {
+    drawString(x, y + h + (i * h), String(weekInYear + i), RIGHT);
+  }
+  // Oszlopelválasztók rajzolása
+  for (int i = 0; i < 7; i++) {
+    drawFastVLine( x + (w / 3) + (i * w), y + (h / 2), h * 6, Grey);
+  }
+  // Sorelválasztók rajzolása
+  for (int i = 1; i < 7; i++) {
+    drawFastHLine( x + (w / 4), y - (h * 0.21) + (i * h), w * 7, Grey);
+  }
+
+  // Napok kirajzolása
+  int day = 1;
+  for (int row = 0; row < 6; row++) {
+    for (int col = 0; col < 7; col++) {
+      int cellX = x + 60 + (col * w);
+      int cellY = y + h + (row * h);
+
+      // Ha elértük az első nap helyét, akkor kezdjük a számozást
+      if (row == 0 && col < firstDay) {
+          continue;
+      }
+
+      if (day > daysInMonth) {
+          break;
+      }
+
+      // Aktuális nap kiemelése
+      if (day == today) {
+          drawCircle(cellX, cellY + 14, 29, LightGrey);
+          drawCircle(cellX, cellY + 14, 28, Black);
+          drawCircle(cellX, cellY + 14, 27, LightGrey);
+      }
+
+      drawString(cellX, cellY, String(day), CENTER);
+      day++;
+    }
+  }
+}
+
+// Naptári események szövegdoboza
+void DisplayEventBox(int16_t x, int16_t y, String row1, String row2, String row3, bool more) {
+  int16_t width = 365;
+  int16_t height = 100;
+  uint8_t border = 3;
+  fillRect(x, y, width, height, Black);
+  fillRect(x + border, y + border, width - (2 * border), height - (2 * border), White);
+  setFont(OpenSans12B);
+  drawString(x + 7, y + 7, row1, LEFT); // ha egész nap akkor óra:perc helyett egész nap vagy semmi
+  drawFastHLine(x, y + 32, width, DarkGrey);
+  setFont(OpenSans18B);
+  drawString(x + 5, y + 38, row2, LEFT); // title
+  setFont(OpenSans10B);
+  drawString(x + 5, y + 74, row3, LEFT); // description
+  if (more) {
+    drawFastHLine(x + 3, y + height + 3, width, DarkGrey);
+    drawFastVLine(x + width + 3, y + 3, height, DarkGrey);
+    drawFastHLine(x + 7, y + height + 7, width, DarkGrey);
+    drawFastVLine(x + width + 7, y + 7, height, DarkGrey);
+  }
+}
+
+// Felső fejléc (város bal felső sarok, dátum idő képernyő közepére)
 void DisplayGeneralInfoSection() {
   setFont(OpenSans10B);
   drawString(5, 5, cityList[cityListPosID].City, LEFT);
@@ -508,7 +767,7 @@ void DisplayTempHumiPressSection(int x, int y) {
     drawString(x - 30, y + Yoffset, String(WxConditions[0].FeelsLike, 1) + "° "+TXT_FEELSLIKE, LEFT);   // Show FeelsLike temperature if windspeed > 0
     Yoffset += 30;
   }
-  drawString(x - 30, y + Yoffset, String(WxConditions[0].High, 0) + "° | " + String(WxConditions[0].Low, 0) + "° " + TXT_HILO, LEFT); // Show forecast high and Low
+  drawString(x - 30, y + Yoffset, String(WxConditions[0].High, 1) + "° | " + String(WxConditions[0].Low, 1) + "° " + TXT_HILO, LEFT); // Show forecast high and Low
 }
 
 void DisplayForecastTextSection(int x, int y) {
@@ -548,7 +807,7 @@ void DisplayForecastWeather(int x, int y, int index, int fwidth) {
   drawString(x + fwidth / 2, y + 130, String(WxForecast[index].High, 0) + "°/" + String(WxForecast[index].Low, 0) + "°", CENTER);
 }
 
-// Térkép ikon megjelenítés
+// Térkép ikonok megjelenítése
 void DisplayMapWeather(int x, int y, int index) {
   DisplayConditionsSection(x, y - 10, WxMapData[index].Icon, SmallIcon);
   setFont(OpenSans10B);
@@ -562,6 +821,7 @@ double NormalizedMoonPhase(int d, int m, int y) {
   return (Phase - (int) Phase);
 }
 
+// Napkelte napnyugta rajzolás
 void DisplayAstronomySection(int x, int y) {
   setFont(OpenSans10B);
   time_t now = time(NULL);
@@ -575,6 +835,7 @@ void DisplayAstronomySection(int x, int y) {
   DrawSunsetImage(x + 180, y + 60);
 }
 
+// Hold rajzolása
 void DrawMoon(int x, int y, int diameter, int dd, int mm, int yy, String hemisphere) {
   double Phase = NormalizedMoonPhase(dd, mm, yy);
   hemisphere.toLowerCase();
@@ -610,6 +871,7 @@ void DrawMoon(int x, int y, int diameter, int dd, int mm, int yy, String hemisph
   drawCircle(x + diameter - 1, y + diameter, diameter / 2, Black);
 }
 
+// Holdfázis megjelenítés
 String MoonPhase(int d, int m, int y, String hemisphere) {
   int c, e;
   double jd;
@@ -639,6 +901,7 @@ String MoonPhase(int d, int m, int y, String hemisphere) {
   return "";
 }
 
+// Előrejelzés ikonok
 void DisplayForecastSection(int x, int y) {
   int f = 0;
   do {
@@ -768,7 +1031,7 @@ boolean UpdateLocalTime() {
   //See http://www.cplusplus.com/reference/ctime/strftime/
   Serial.println(&timeinfo, "%a %b %d %Y   %H:%M:%S");      // Displays: Saturday, June 24 2017 14:05:49
   if (Units == "M") {
-    sprintf(day_output, "%s, %02u %s %04u", weekday_D[timeinfo.tm_wday], timeinfo.tm_mday, month_M[timeinfo.tm_mon], (timeinfo.tm_year) + 1900);
+    sprintf(day_output, "%s, %02u %s %04u", weekday_D[timeinfo.tm_wday], timeinfo.tm_mday, monthLong_M[timeinfo.tm_mon], (timeinfo.tm_year) + 1900);
     strftime(update_time, sizeof(update_time), "%H:%M:%S", &timeinfo);  // Creates: '@ 14:05:49'   and change from 30 to 8 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     sprintf(time_output, "%s", update_time);
   }
@@ -1006,23 +1269,6 @@ void Visibility(int x, int y, String Visibility) {
   drawString(x + 20, y, Visibility, LEFT);
 }
 
-// térkép rajzolása
-void DrawMapImage() {
-  Rect_t area = {
-    .x = (SCREEN_WIDTH - mapTile_width) / 2, .y = (SCREEN_HEIGHT - mapTile_height) / 2, .width  = mapTile_width, .height =  mapTile_height
-  };
-  epd_draw_grayscale_image(area, (uint8_t *) mapTile_data);
-  setFont(OpenSans10B);
-  drawString(5, 5, Date_str + "  @   " + Time_str, LEFT);
-
-  for (int i = 0; i < WxMapData.size(); i++) {
-    int x = WxMapData[i].x;
-    int y = WxMapData[i].y;
-    DisplayMapWeather(x, y, i);
-    // fillCircle(x, y, 5, BLACK_ON_WHITE); // Just for position test
-  }
-}
-
 void DrawMoonImage(int x, int y) {
   Rect_t area = {
     .x = x, .y = y, .width  = moon_width, .height =  moon_height
@@ -1124,10 +1370,13 @@ void drawString(int32_t x, int32_t y, String text, alignment align) {
   int32_t  x1, y1; //the bounds of x,y and w and h of the variable 'text' in pixels.
   int32_t w, h;
   int32_t xx = x, yy = y;
+  int32_t baseline;
+  // For height, we check a character that has no stems below the baseline.
+  get_text_bounds(&currentFont, "A", &xx, &yy, &x1, &y1, &w, &baseline, NULL); // for baseline calc
   get_text_bounds(&currentFont, data, &xx, &yy, &x1, &y1, &w, &h, NULL);
   if (align == RIGHT)  x = x - w;
   if (align == CENTER) x = x - w / 2;
-  int32_t cursor_y = y + h;
+  int32_t cursor_y = y + baseline;
   write_string(&currentFont, data, &x, &cursor_y, framebuffer);
 }
 

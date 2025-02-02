@@ -54,7 +54,10 @@ const String TXT_UV_VERYHIGH = "(VH)";
 const String TXT_UV_EXTREME = "(EX)";
 
 //Day of the week
+const char* weekday_D[] = { "Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi" };
 const char* weekday_D[] = { "Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam" };
+const char* weekdayC_D[] = { "D", "L", "Ma", "Me", "J", "V", "S"};
 
 //Month
+const char* monthLong_M[] = { "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre" };
 const char* month_M[] = { "Jan", "Fév", "Mar", "Avr", "Mai", "Jun", "Jul", "Aou", "Sep", "Oct", "Nov", "Déc" };

@@ -34,7 +34,20 @@ typedef struct {
   int x;
   int y;
   String city;
-} MapDataRecord;
+} Map_record_type;
+
+struct EventData{
+    String startTime;
+    String endTime;
+    String title;
+    String description;
+    bool allDay;
+    String status;
+    String alert;
+    uint8_t month;
+    uint8_t day;
+    uint8_t weekday;
+  };
 
 
 #endif /* ifndef FORECAST_RECORD_H_ */

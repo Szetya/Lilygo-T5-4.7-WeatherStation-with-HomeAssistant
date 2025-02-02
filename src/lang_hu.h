@@ -20,9 +20,9 @@ const String TXT_SNOWFALL_IN = "Havazás (in)";
 
 //Moon
 const String TXT_MOON_NEW             = "Újhold";
-const String TXT_MOON_WAXING_CRESCENT = "Növekvő holdsarló";
-const String TXT_MOON_FIRST_QUARTER   = "Első negyed";
-const String TXT_MOON_WAXING_GIBBOUS  = "Növekvő domború hold";
+const String TXT_MOON_WAXING_CRESCENT = "Növekvõ holdsarló";
+const String TXT_MOON_FIRST_QUARTER   = "Elsõ negyed";
+const String TXT_MOON_WAXING_GIBBOUS  = "Növekvõ domború hold";
 const String TXT_MOON_FULL            = "Telihold";
 const String TXT_MOON_WANING_GIBBOUS  = "Fogyó domború hold";
 const String TXT_MOON_THIRD_QUARTER   = "Utolsó negyed";
@@ -55,6 +55,10 @@ const String TXT_UV_EXTREME = "(Extrém Magas)";
 
 //Day of the week
 const char* weekday_D[] = { "Vasárnap", "Hétfõ", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat" };
+const char* weekdayShort_D[] = { "Vas", "Hé", "Ke", "Sze", "Csüt", "Pén", "Szo" };
+const char* weekdayC_D[] = { "V", "H", "K", "SZ", "CS", "P", "SZ"};
 
 //Month
-const char* month_M[] = { "Jan", "Feb", "Már", "Ápr", "Máj", "Jún", "Júl", "Aug", "Sze", "Okt", "Nov", "Dec" };
+const char* monthLong_M[] = { "Január", "Február", "Március", "Április", "Május", "Június", "Július", "Augusztus", "Szeptember", "Okttóber", "November", "December" };
+const char* monthShort_M[] = { "Jan", "Feb", "Már", "Ápr", "Máj", "Jún", "Júl", "Aug", "Szep", "Okt", "Nov", "Dec" };
+
