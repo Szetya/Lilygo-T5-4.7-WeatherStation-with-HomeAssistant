@@ -62,3 +62,9 @@ int  daylightOffset_sec = 3600;                            // In the UK DST is +
 //#include "lang_fr.h"
 //#include "lang_de.h"
 #include "lang_hu.h"
+
+
+// Params needed to fetch events from Google Calendar
+char const * const calendarHost = "script.google.com";
+char const * const calendarPath = "/macros/s/Your_Key/exec"; // script path including key
+int const calendarPort = 443;
