@@ -28,6 +28,19 @@ The project is configured as PlatformIO Project (Visual Studio Code AddIn) - to 
 - Map Coordinate Customization – The map's display coordinates can be adjusted in map.h
 ![](./assets/WeatherMap.jpg)
 
+## New Calendar Features (Added in this Fork)
+- Calendar view on the next page. Press GPIO39 (button) to alternate to weather, weathermap, calendar mode.
+- Simple monthly view and display of the next 3 entries (14-day scan).
+- The calendar view shows a simplified current weather.
+![](./assets/Calendar.jpg)
+
+## Google Script
+- Copy the [given](./scripts/appscript.gs) Google script code to a new project/script in the [Google script](https://script.google.com/) console.
+- Set the name of the calendar according to your needs.
+- Press Deploy -> New deploment -> Select Web app -> add descripton, Execute as: me, Who has access: anyone -> Deploy.
+- Test the link you received. You should get a JSON object in the browser address bar.
+- The resulting webapp link will be copied into the configuration file from the /macros section to the /exec section.
+
 # License
 
 [GNU GENERAL PUBLIC LICENSE](./LICENSE)
@@ -46,5 +59,5 @@ This means that the original proprietary license that G6EJD tried to enforce is 
 ## Support my work ...
 **with caffeine:**  
 
-<a href="https://www.buymeacoffee.com/cybdis" target="_blank">
+<a href="https://buymeacoffee.com/HA5SZI" target="_blank">
   <img src="https://raw.githubusercontent.com/CybDis/CybDis/main/bmc-yellow-button.png" height="60px"/></a>
