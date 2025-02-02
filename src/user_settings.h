@@ -2,11 +2,11 @@
 #include <string>
 #include <vector>
 // Change to your WiFi credentials
-const char* ssid     = "Szetya_ASUS";
-const char* password = "FreeWiFi";
+const char* ssid     = "WIFI_SSID";
+const char* password = "WIFI_PASSWORD";
 
 // Use your own API key by signing up for a free developer account at https://openweathermap.org/
-String apikey       = "0befb4cbda8fd23e73fdabf6407eea6f";
+String apikey       = "OWM_API_KEY";
 const char server[] = "api.openweathermap.org";
 //http://api.openweathermap.org/data/2.5/forecast?q=Melksham,UK&APPID=your_OWM_API_key&mode=json&units=metric&cnt=40
 //http://api.openweathermap.org/data/2.5/weather?q=Melksham,UK&APPID=your_OWM_API_key&mode=json&units=metric&cnt=1
@@ -66,5 +66,5 @@ int  daylightOffset_sec = 3600;                            // In the UK DST is +
 
 // Params needed to fetch events from Google Calendar
 char const * const calendarHost = "script.google.com";
-char const * const calendarPath = "/macros/s/AKfycbyuooKDz-gIqsW8ia76Cvo-e2_6SAcfqX3KHhNq-gHzrcsUXac20kRrQt3XdUPSblm3qw/exec"; // script path including key
+char const * const calendarPath = "/macros/s/Your_KEY/exec"; // script path including key
 int const calendarPort = 443;
