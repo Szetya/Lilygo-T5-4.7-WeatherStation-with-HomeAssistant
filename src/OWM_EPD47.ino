@@ -18,17 +18,18 @@
 #define SCREEN_WIDTH   EPD_WIDTH
 #define SCREEN_HEIGHT  EPD_HEIGHT
 
+// You can rearrange the display order here
 enum Page {
     PAGE_NORMAL = 0, // Egyértelművé teszi, hogy ez 0
     PAGE_MAP,        // Automatikusan 1 lesz
     PAGE_CALENDAR,   // Automatikusan 2 lesz
-    MAX_PAGES        // Automatikusan 3 lesz
+    MAX_PAGES        // Automatikusan 3 lesz, ez jelöli a tömb elemeinek végét
 };
 
 //String version = "2.7.1 / 4.7in"; 
 RTC_DATA_ATTR uint8_t cityListPosID = 0;   // location position number, store
-RTC_DATA_ATTR uint8_t pageNr = PAGE_CALENDAR; // 0 normal, 1 map, 2 calendar,
-static uint8_t maxPages = 3;        // Max page number
+RTC_DATA_ATTR uint8_t pageNr = PAGE_NORMAL; // 0 normal, 1 map, 2 calendar. start with this
+// static uint8_t maxPages = 3;        // Max page number
 
 enum alignment {LEFT, RIGHT, CENTER};
 #define White         0xFF
