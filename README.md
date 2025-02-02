@@ -38,7 +38,7 @@ The project is configured as PlatformIO Project (Visual Studio Code AddIn) - to 
 - Copy the [given](./scripts/appscript.gs) Google script code to a new project/script in the [Google script](https://script.google.com/) console.
 - Set the name of the calendar according to your needs.
 - Press Deploy -> New deploment -> Select Web app -> add descripton, Execute as: me, Who has access: anyone -> Deploy.
-- Test the link you received. You should get a JSON object in the browser address bar.
+- Test the link you received in the browser address bar. You should get a JSON object.
 - The resulting webapp link will be copied into the configuration file from the /macros section to the /exec section.
 
 # License
